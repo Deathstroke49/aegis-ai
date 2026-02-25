@@ -1,5 +1,5 @@
 import streamlit as st
-import anthropic
+import google.generativeai as genai
 import base64
 import json
 import re
@@ -483,8 +483,8 @@ def compute_underwriting(d: dict) -> dict:
 
 # ─── AI EXTRACTION ──────────────────────────────────────────────
 def extract_from_pdf(pdf_bytes: bytes) -> dict:
-    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    client = anthropic.Anthropic(api_key=st.secrets.get("ANTHROPIC_API_KEY", ""))
+    genai.configure(api_key=st.secrets.get("GEMINI_API_KEY", ""))
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
     prompt = """You are an expert insurance underwriter. Extract ALL fields from this life insurance proposal form PDF.
 
@@ -520,23 +520,14 @@ Return ONLY a valid JSON object with EXACTLY these keys (no markdown, no backtic
 
 Rules:
 - health_conditions severity: 0=not present, 1=sev1, 2=sev2, 3=sev3, 4=sev4
-- habits: "none|occasionally|moderate|high"
+- habits: none|occasionally|moderate|high
 - risky_occupations: array with values from: pilot, athlete, driver, merchant_navy, oil_gas
 - Return ONLY the JSON. Nothing else."""
 
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1200,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": pdf_b64}},
-                {"type": "text", "text": prompt}
-            ]
-        }]
-    )
+    pdf_part = {"mime_type": "application/pdf", "data": pdf_bytes}
+    response = model.generate_content([pdf_part, prompt])
 
-    raw = "".join(b.text for b in response.content if hasattr(b, "text"))
+    raw = response.text
     raw = re.sub(r"```json|```", "", raw).strip()
     return json.loads(raw)
 
